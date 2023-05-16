@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 
 if __name__ == '__main__':
 
-    N = 10 #Orden del filtro
+    N = 5 #Orden del filtro
     fc = [6000] #Frecuencia de corte
-    btype = 'hp'
+    btype = 'lp'
     analog = False
     output = 'ba'
     fs = 44100
