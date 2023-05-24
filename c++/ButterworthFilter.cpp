@@ -7,23 +7,10 @@
 #include <stdexcept>
 #include <numeric>
 #include <algorithm>
+#include <iostream>
+#include "ButterworthFilter.h"
 
 using namespace std::complex_literals;
-
-/*
-using namespace std;    
-std::vector<double> signal(44100);
-signal.size();
-
-booleanos: true false
-
-// Coeficientes del filtro
-double b[3], a[3];
-
-Para devolver muchos valores de una función: https://stackoverflow.com/questions/321068/returning-multiple-values-from-a-c-function
-
-Mi forma de usar tuplas sirve de C++17 en adelante
-*/
 
 std::tuple<std::vector<double>, std::vector<double>> butter(int N, 
                                                             std::vector<double> Wn, 
@@ -66,12 +53,11 @@ std::tuple<std::vector<double>, std::vector<double>> butter(int N,
         Coefficients of the denominator of the filter transfer function
     */
 
-   std::vector<double> b; 
-   std::vector<double> a;
+   std::tuple<std::vector<double>, std::vector<double>> coeff;
 
-   auto [b, a] = iirfilter(N, Wn, btype, analog, fs, b, a);
+   coeff = iirfilter(N, Wn, btype, analog, fs);
 
-   return std::make_tuple(b, a);
+   return coeff;
 
 }
 
@@ -79,9 +65,7 @@ std::tuple<std::vector<double>, std::vector<double>> iirfilter(int N,
                                                                std::vector<double> Wn, 
                                                                std::string btype, 
                                                                bool analog, 
-                                                               double fs, 
-                                                               std::vector<double> b, 
-                                                               std::vector<double> a){
+                                                               double fs){
     /*
     IIR digital and analog filter design given order and critical points.
     Design an Nth-order digital or analog filter and return the filter
@@ -121,10 +105,16 @@ std::tuple<std::vector<double>, std::vector<double>> iirfilter(int N,
         Coefficients of the denominator of the filter transfer function
     */
 
+    std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>, double> zpk;
+    std::tuple<std::vector<double>, std::vector<double>> coeff;
     std::vector<double> warped;
+    std::vector<std::complex<double>> z;
+    std::vector<std::complex<double>> p;
+    double k;
 
     // Calculate zeros, poles and gain of the butterworth filter of N order.
-    auto [z, p, k] = buttap(N);
+    zpk = buttap(N);
+    std::tie(z, p, k) = zpk;
 
     // Pre-warp frequencies for digital filter design
     if (!analog){
@@ -149,12 +139,14 @@ std::tuple<std::vector<double>, std::vector<double>> iirfilter(int N,
     if (btype == "lowpass" || btype == "highpass"){
 
         if (btype == "lowpass"){
-            auto [z, p, k] = lp2lp_zpk(z, p, k, warped[0]);
+            zpk = lp2lp_zpk(z, p, k, warped[0]);
         }
             
         else{
-            auto [z, p, k] = lp2hp_zpk(z, p, k, warped[0]);
+            zpk = lp2hp_zpk(z, p, k, warped[0]);
         }
+
+        std::tie(z, p, k) = zpk;
 
     }
         
@@ -166,11 +158,13 @@ std::tuple<std::vector<double>, std::vector<double>> iirfilter(int N,
             double wo = std::sqrt(warped[0] * warped[1]);
 
             if (btype == "bandpass"){
-                auto [z, p, k] = lp2bp_zpk(z, p, k, wo, bw);
+                zpk = lp2bp_zpk(z, p, k, wo, bw);
             }
             else{
-                auto [z, p, k] = lp2bs_zpk(z, p, k, wo, bw);
+                zpk = lp2bs_zpk(z, p, k, wo, bw);
             }
+
+            std::tie(z, p, k) = zpk;
         }
         
         else{
@@ -180,28 +174,28 @@ std::tuple<std::vector<double>, std::vector<double>> iirfilter(int N,
 
     // Find discrete equivalent for digital filters:
     if (!analog){
-        auto [z, p, k] = bilinear_zpk(z, p, k, fs);
+        zpk = bilinear_zpk(z, p, k, fs);
+        std::tie(z, p, k) = zpk;
     }
 
     // Transform to numerator/denominator ('ba') output:
-    auto [b, a] = zpk2tf(z, p, k, b, a);
+    coeff = zpk2tf(z, p, k);
 
-    return std::make_tuple(b, a);
-
+    return coeff;
 }
 
-std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> buttap(int N){
+std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>, double> buttap(int N){
     /*
     Return (z,p,k) for analog prototype of Nth-order Butterworth filter.
     The filter will have an angular (e.g., rad/s) cutoff frequency of 1.
     */
 
-    std::vector<double> z;               //Zeros
+    std::vector<std::complex<double>> z; //Zeros
     std::vector<std::complex<double>> p; //poles
     std::vector<double> m;
     double k;                            //gain
 
-    m = arange<double>(-N+1, N, 2.0);
+    m = arange(-N+1.0,(double) N, 2.0);
     // Middle value is 0 to ensure an exactly real pole
     for(auto val : m){
         //p = -exp(1i * M_PI * m / (2 * N))
@@ -214,10 +208,10 @@ std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> butta
     return std::make_tuple(z, p, k);
 }
 
-std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> bilinear_zpk(std::vector<double> z, 
-                                                                                        std::vector<std::complex<double>> p, 
-                                                                                        double k, 
-                                                                                        double fs){
+std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>, double> bilinear_zpk(std::vector<std::complex<double>> z, 
+                                                                                                      std::vector<std::complex<double>> p, 
+                                                                                                      double k, 
+                                                                                                      double fs){
     /*
     """
     Return a digital IIR filter from an analog one using a bilinear transform.
@@ -245,8 +239,9 @@ std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> bilin
         System gain of the transformed digital filter.
     */
 
-    std::vector<double> z_z;               //Zeros
+    std::vector<std::complex<double>> z_z; //Zeros
     std::vector<std::complex<double>> p_z; //poles
+    std::complex<double> z_prod, p_prod;
     double k_z;                            //Gain
 
     int degree = _relative_degree(z, p);
@@ -255,15 +250,15 @@ std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> bilin
 
     // Bilinear transform the poles and zeros
     for (int i = 0; i < z.size(); i++) {
-        z_z[i] = (fs2 + z[i]) / (fs2 - z[i]);
+        z_z.push_back((fs2 + z[i]) / (fs2 - z[i]));
     }
     for (int i = 0; i < p.size(); i++) {
-        p_z[i] = (fs2 + p[i]) / (fs2 - p[i]);
+        p_z.push_back((fs2 + p[i]) / (fs2 - p[i]));
     }
 
     // Any zeros that were at infinity get moved to the Nyquist frequency
     for (int i = 0; i < degree; i++){
-        z_z.push_back(-1.0); //Es probable que esto deba ser 1 y no -1, probar después!!!!!!!!!
+        z_z.push_back(1.0); //Es probable que esto deba ser 1 y no -1, probar después!!!!!!!!!
     }
 
     // Compensate for gain change
@@ -273,19 +268,26 @@ std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> bilin
     for (int i = 0; i < p.size(); i++){
         p[i] = fs2 - p[i];
     }
+    
+    z_prod = 1.0;
+    for (auto val: z){
+        z_prod *= val;
+    }
 
-    auto z_prod = std::accumulate(z.begin(), z.end(), 1.0, std::multiplies<double>());
-    auto p_prod = std::accumulate(p.begin(), p.end(), 1.0, std::multiplies<std::complex<double>>());
+    p_prod = 1.0;
+    for (auto val: p){
+        p_prod *= val;
+    }
 
     k_z = k * std::real(z_prod / p_prod);
 
     return std::make_tuple(z_z, p_z, k_z);
 }
 
-std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> lp2lp_zpk(std::vector<double> z, 
-                                                                                     std::vector<std::complex<double>> p, 
-                                                                                     double k, 
-                                                                                     double wo){
+std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>, double> lp2lp_zpk(std::vector<std::complex<double>> z, 
+                                                                                                   std::vector<std::complex<double>> p, 
+                                                                                                   double k, 
+                                                                                                   double wo){
     /*
     Transform a lowpass filter prototype to a different frequency.
     Return an analog low-pass filter with cutoff frequency `wo`
@@ -312,7 +314,7 @@ std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> lp2lp
         System gain of the transformed low-pass filter.
     */
 
-    std::vector<double> z_lp;               //Zeros
+    std::vector<std::complex<double>> z_lp; //Zeros
     std::vector<std::complex<double>> p_lp; //poles
     double k_lp;                            //Gain
 
@@ -320,10 +322,10 @@ std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> lp2lp
 
     // Scale all points radially from origin to shift cutoff frequency
     for (int i = 0; i < z.size(); i++){
-        z_lp[i] = wo * z[i];
+        z_lp.push_back(wo * z[i]);
     }
     for (int i = 0; i < p.size(); i++){
-        p_lp[i] = wo * p[i];
+        p_lp.push_back(wo * p[i]);
     }
 
     // Each shifted pole decreases gain by wo, each shifted zero increases it.
@@ -333,10 +335,10 @@ std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> lp2lp
     return std::make_tuple(z_lp, p_lp, k_lp);
 }
 
-std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> lp2hp_zpk(std::vector<double> z, 
-                                                                                     std::vector<std::complex<double>> p, 
-                                                                                     double k, 
-                                                                                     double wo) {
+std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>, double> lp2hp_zpk(std::vector<std::complex<double>> z, 
+                                                                                                   std::vector<std::complex<double>> p, 
+                                                                                                   double k, 
+                                                                                                   double wo){
     /*
     Transform a lowpass filter prototype to a highpass filter.
     Return an analog high-pass filter with cutoff frequency `wo`
@@ -363,19 +365,21 @@ std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> lp2hp
         System gain of the transformed high-pass filter.
     */
 
-    std::vector<double> z_hp;               //Zeros
+    std::vector<std::complex<double>> z_hp; //Zeros
     std::vector<std::complex<double>> p_hp; //poles
+    std::complex<double> z_prod, p_prod;
     double k_hp;                            //Gain
+
 
     int degree = _relative_degree(z, p);
 
     // Invert positions radially about unit circle to convert LPF to HPF
     // Scale all points radially from origin to shift cutoff frequency
     for (int i = 0; i < z.size(); i++){
-        z_hp[i] = wo / z[i];
+        z_hp.push_back(wo / z[i]);
     }
     for (int i = 0; i < p.size(); i++){
-        p_hp[i] = wo / p[i];
+        p_hp.push_back(wo / p[i]);
     }
 
     // If lowpass had zeros at infinity, inverting moves them to origin.
@@ -384,19 +388,26 @@ std::tuple<std::vector<double>, std::vector<std::complex<double>>, double> lp2hp
     }
 
     // Cancel out gain change caused by inversion
-    auto z_prod = std::accumulate(z.begin(), z.end(), -1.0, std::multiplies<double>());
-    auto p_prod = std::accumulate(p.begin(), p.end(), -1.0, std::multiplies<std::complex<double>>());
+    z_prod = -1.0;
+    for (auto val: z){
+        z_prod *= val;
+    }
+
+    p_prod = 1.0;
+    for (auto val: p){
+        p_prod *= val;
+    }
 
     k_hp = k * std::real( z_prod / p_prod);
 
     return std::make_tuple(z_hp, p_hp, k_hp);
 }
 
-std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>, double> lp2bp_zpk(std::vector<double> z, 
+std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>, double> lp2bp_zpk(std::vector<std::complex<double>> z, 
                                                                                                    std::vector<std::complex<double>> p, 
                                                                                                    double k, 
                                                                                                    double wo, 
-                                                                                                   double bw) {
+                                                                                                   double bw){
     /*
     Transform a lowpass filter prototype to a bandpass filter.
     Return an analog band-pass filter with center frequency `wo` and
@@ -440,7 +451,7 @@ std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>,
 
     // Scale poles and zeros to desired bandwidth
     for (auto val : z) {
-        z_lp.push_back(val * bw/2);
+        z_lp.push_back(val * (bw/2));
     }
     for (auto val : p) {
         p_lp.push_back(val * (bw/2));
@@ -456,8 +467,26 @@ std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>,
         p_aux_neg.push_back(p_lp[i] - std::sqrt(std::pow(p_lp[i], 2) - std::pow(wo, 2)));
     }
 
-    std::merge(z_aux_pos.begin(), z_aux_pos.end(), z_aux_neg.begin(), z_aux_neg.end(), std::back_inserter(z_bp));
-    std::merge(p_aux_pos.begin(), p_aux_pos.end(), p_aux_neg.begin(), p_aux_neg.end(), std::back_inserter(p_bp));
+    //std::merge(z_aux_pos.begin(), z_aux_pos.end(), z_aux_neg.begin(), z_aux_neg.end(), std::back_inserter(z_bp));
+    //std::merge(p_aux_pos.begin(), p_aux_pos.end(), p_aux_neg.begin(), p_aux_neg.end(), std::back_inserter(p_bp));
+
+    // Insert in z_bp:
+    for (auto val: z_aux_pos){
+        z_bp.push_back(val);
+    }
+
+    for (auto val: z_aux_neg){
+        z_bp.push_back(val);
+    }
+
+    // Insert in p_bp:
+    for (auto val: p_aux_pos){
+        p_bp.push_back(val);
+    }
+
+    for (auto val: p_aux_neg){
+        p_bp.push_back(val);
+    }
 
     // Move degree zeros to origin, leaving degree zeros at infinity for BPF
     for (int i = 0; i < degree; i++){
@@ -470,7 +499,7 @@ std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>,
     return std::make_tuple(z_bp, p_bp, k_bp);
 }
 
-std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>, double> lp2bs_zpk(std::vector<double> z, 
+std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>, double> lp2bs_zpk(std::vector<std::complex<double>> z, 
                                                                                                    std::vector<std::complex<double>> p, 
                                                                                                    double k, 
                                                                                                    double wo, 
@@ -512,6 +541,7 @@ std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>,
     std::vector<std::complex<double>> p_bs;
     std::vector<std::complex<double>> p_aux_neg;
     std::vector<std::complex<double>> p_aux_pos;
+    std::complex<double> z_prod, p_prod;
     double k_bs;                                 //Gain
 
     double degree = _relative_degree(z, p);
@@ -534,8 +564,23 @@ std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>,
         p_aux_neg.push_back(p_hp[i] - std::sqrt(std::pow(p_hp[i], 2) - std::pow(wo, 2)));
     }
 
-    std::merge(z_aux_pos.begin(), z_aux_pos.end(), z_aux_neg.begin(), z_aux_neg.end(), std::back_inserter(z_bs));
-    std::merge(p_aux_pos.begin(), p_aux_pos.end(), p_aux_neg.begin(), p_aux_neg.end(), std::back_inserter(p_bs));
+    // Insert in z_bp:
+    for (auto val: z_aux_pos){
+        z_bs.push_back(val);
+    }
+
+    for (auto val: z_aux_neg){
+        z_bs.push_back(val);
+    }
+
+    // Insert in p_bp:
+    for (auto val: p_aux_pos){
+        p_bs.push_back(val);
+    }
+
+    for (auto val: p_aux_neg){
+        p_bs.push_back(val);
+    }
 
     // Move any zeros that were at infinity to the center of the stopband
     for (int i = 0; i < degree; i++){
@@ -545,9 +590,15 @@ std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>,
         z_bs.push_back(-1i*wo);
     }
 
-    // Cancel out gain change caused by inversion
-    auto z_prod = std::accumulate(z.begin(), z.end(), -1.0, std::multiplies<double>());
-    auto p_prod = std::accumulate(p.begin(), p.end(), -1.0, std::multiplies<std::complex<double>>());
+    z_prod = -1.0;
+    for (auto val: z){
+        z_prod *= val;
+    }
+
+    p_prod = 1.0;
+    for (auto val: p){
+        p_prod *= val;
+    }
 
     k_bs = k * std::real(z_prod / p_prod);
 
@@ -556,9 +607,7 @@ std::tuple<std::vector<std::complex<double>>, std::vector<std::complex<double>>,
 
 std::tuple<std::vector<double>, std::vector<double>> zpk2tf(std::vector<std::complex<double>> z, 
                                                             std::vector<std::complex<double>> p, 
-                                                            double k, 
-                                                            std::vector<double> b, 
-                                                            std::vector<double> a){
+                                                            double k){
     /*
     Return polynomial transfer function representation from zeros and poles
     Parameters
@@ -573,13 +622,15 @@ std::tuple<std::vector<double>, std::vector<double>> zpk2tf(std::vector<std::com
     a : double pointer
     Returns
     -------
-    b : double pointer
+    b : vector
         Numerator polynomial coefficients.
-    a : double pointer
+    a : vector
         Denominator polynomial coefficients.
     */
     
    std::vector<double> poly_z;
+   std::vector<double> b;
+   std::vector<double> a;
 
     poly_z = poly(z);
     a = poly(p);
@@ -595,18 +646,20 @@ std::tuple<std::vector<double>, std::vector<double>> zpk2tf(std::vector<std::com
     return std::make_tuple(b, a);
 }
 
-template<typename T>
-std::vector<T> arange(T start, T stop, T step = 1) {
-    std::vector<T> values;
-    for (T value = start; value < stop; value += step)
+std::vector<double> arange(double start, double stop, double step) {
+
+    std::vector<double> values;
+
+    for (double value = start; value < stop; value += step)
         values.push_back(value);
     return values;
 }
 
-int _relative_degree(std::vector<double> z, std::vector<std::complex<double>> p){
+int _relative_degree(std::vector<std::complex<double>> z, std::vector<std::complex<double>> p){
     /*
     Return relative degree of transfer function from zeros and poles
     */
+
     int degree = p.size() - z.size();
     if (degree < 0){
         throw std::out_of_range("Improper transfer function. Must have at least as many poles as zeros.");
@@ -685,7 +738,7 @@ std::vector<double> poly(std::vector<std::complex<double>> seq_of_zeros){
     for(auto val : a){
         output.push_back(std::real(val));
     }
-
+    
     return output;
 
 }
@@ -727,4 +780,67 @@ std::vector<std::complex<double>> convolve(std::vector<std::complex<double>> h, 
 
     return y;
 
+}
+
+std::vector<double> filter_signal(std::vector<double> signal, std::vector<double> b, std::vector<double>a){
+
+    std::vector<double> output(signal.size());
+
+    for (int n = 0; n < signal.size(); n++){
+        output[n] = b[0] * signal[n];
+
+        for (int i = 1; i < b.size(); i++){
+            if (n>=i){
+                output[n] += b[i] * signal[n-i];
+            }
+            else{
+                break;
+            }
+        }
+
+        for (int i = 1; i < a.size(); i++){
+            if (n>0 && n>=i){
+                output[n] -= a[i]*output[n-i];
+            }
+            else{
+                break;
+            }
+        }
+    }
+
+    return output;
+}
+
+int main()
+{
+    //Coeficientes de los filtros:
+    std::tuple<std::vector<double>, std::vector<double>> coeff;
+    std::vector<double> b;
+    std::vector<double> a;
+
+    int N = 3;                    //Orden del filtro
+    std::vector<double> fc{6000}; //Frecuencia de corte
+    std::string btype = "highpass";     //Tipo de filtro
+    bool analog = false;          //Filtro analógico o digital
+    double fs = 44100;            //Frecuencia de muestreo
+
+    //Obtengo los coeficientes de los filtros:
+    coeff = butter(N, fc, btype, analog, fs);
+    std::tie(b, a) = coeff;
+
+
+    //Print coefficients:
+    std::cout<< "b: [";
+    for(auto coeff : b){
+        std::cout<<coeff<<", ";
+    }
+    std::cout<< "]"<< std::endl;
+
+    std::cout<< "a: [";
+    for(auto coeff : a){
+        std::cout<<coeff<<", ";
+    }
+    std::cout<< "]"<< std::endl;
+
+    return 0;
 }

@@ -302,6 +302,7 @@ def buttap(N):
     --------
     butter : Filter design function using this prototype
     """
+    print('\nbuttap:')
     if abs(int(N)) != N:
         raise ValueError("Filter order must be a nonnegative integer")
     z = np.array([])
@@ -309,6 +310,9 @@ def buttap(N):
     # Middle value is 0 to ensure an exactly real pole
     p = -np.exp(1j * np.pi * m / (2 * N))
     k = 1
+    print(f'z: {z}')
+    print(f'p: {p}')
+    print(f'k: {k}')
     return z, p, k
 
 
@@ -368,6 +372,7 @@ def bilinear_zpk(z, p, k, fs):
     >>> plt.grid(True)
     """
 
+    print('\nbilinear_zpk:')
     z = np.atleast_1d(z)
     p = np.atleast_1d(p)
 
@@ -397,6 +402,9 @@ def bilinear_zpk(z, p, k, fs):
     #print(z_hp)
     #print(f'p: {len(p_hp)}')
     #print(p_hp)
+    print(f'z: {z_z}')
+    print(f'p: {p_z}')
+    print(f'k: {k_z}')
 
     return z_z, p_z, k_z
 
@@ -435,6 +443,8 @@ def lp2lp_zpk(z, p, k, wo=1.0):
     .. math:: s \rightarrow \frac{s}{\omega_0}
     .. versionadded:: 1.1.0
     """
+
+    print('\nlp2lp_zpk:')
     z = np.atleast_1d(z)
     p = np.atleast_1d(p)
     wo = float(wo)  # Avoid int wraparound
@@ -448,6 +458,10 @@ def lp2lp_zpk(z, p, k, wo=1.0):
     # Each shifted pole decreases gain by wo, each shifted zero increases it.
     # Cancel out the net change to keep overall gain the same
     k_lp = k * wo**degree
+
+    print(f'z: {z_lp}')
+    print(f'p: {p_lp}')
+    print(f'k: {k_lp}')
 
     return z_lp, p_lp, k_lp
 
@@ -488,6 +502,7 @@ def lp2hp_zpk(z, p, k, wo=1.0):
     logarithmic scale.
     .. versionadded:: 1.1.0
     """
+    print('\nlp2hp_zpk:')
     z = np.atleast_1d(z)
     p = np.atleast_1d(p)
     wo = float(wo)
@@ -509,6 +524,11 @@ def lp2hp_zpk(z, p, k, wo=1.0):
     #print(z_hp)
     #print(f'p: {len(p_hp)}')
     #print(p_hp)
+
+    print(f'z: {z_hp}')
+    print(f'p: {p_hp}')
+    print(f'k: {k_hp}')
+
 
     return z_hp, p_hp, k_hp
 
@@ -552,6 +572,7 @@ def lp2bp_zpk(z, p, k, wo=1.0, bw=1.0):
     geometric (log frequency) symmetry about `wo`.
     .. versionadded:: 1.1.0
     """
+    print('\nlp2bp_zpk:')
     z = np.atleast_1d(z)
     p = np.atleast_1d(p)
     wo = float(wo)
@@ -578,6 +599,10 @@ def lp2bp_zpk(z, p, k, wo=1.0, bw=1.0):
 
     # Cancel out gain change from frequency scaling
     k_bp = k * bw**degree
+
+    print(f'z: {z_bp}')
+    print(f'p: {p_bp}')
+    print(f'k: {k_bp}')
 
     return z_bp, p_bp, k_bp
 
@@ -621,6 +646,7 @@ def lp2bs_zpk(z, p, k, wo=1.0, bw=1.0):
     geometric (log frequency) symmetry about `wo`.
     .. versionadded:: 1.1.0
     """
+    print('\nlp2bs_zpk:')
     z = np.atleast_1d(z)
     p = np.atleast_1d(p)
     wo = float(wo)
@@ -649,6 +675,10 @@ def lp2bs_zpk(z, p, k, wo=1.0, bw=1.0):
     # Cancel out gain change caused by inversion
     k_bs = k * np.real(np.prod(-z) / np.prod(-p))
 
+    print(f'z: {z_bs}')
+    print(f'p: {p_bs}')
+    print(f'k: {k_bs}')
+
     return z_bs, p_bs, k_bs
 
 def zpk2tf(z, p, k):
@@ -669,15 +699,15 @@ def zpk2tf(z, p, k):
     a : ndarray
         Denominator polynomial coefficients.
     """
+    print('\nlp2bs_zpk:')
     z = np.atleast_1d(z)
     k = np.atleast_1d(k)
 
-    print('z')
-    print(z)
-    print('p')
-    print(p)
-    print('k')
-    print(k)
+    print(f'z: {z}')
+    print(f'p: {p}')
+    print(f'k: {k}')
+
+
     if len(z.shape) > 1:
         temp = poly(z[0])
         b = np.empty((z.shape[0], z.shape[1] + 1), temp.dtype.char)
@@ -688,13 +718,6 @@ def zpk2tf(z, p, k):
     else:
         b = k * poly(z)
     a = np.atleast_1d(poly(p))
-
-    print('b')
-    b_2 = b.copy()
-    print(b_2)
-    print('a')
-    a_2 = a.copy()
-    print(a_2)
     
     # Use real output if possible. Copied from numpy.poly, since
     # we can't depend on a specific version of numpy.
@@ -720,10 +743,8 @@ def zpk2tf(z, p, k):
                       np.sort_complex(pos_roots)):
                 a = a.real.copy()
 
-    print('b')
-    print(b)
-    print('a')
-    print(a)
+    print(f'b: {b}')
+    print(f'a: {a}')
 
     return b, a
 
